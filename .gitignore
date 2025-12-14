@@ -1,4 +1,15 @@
-.Rproj.user
+# R project files
+.Rproj.user/
 .Rhistory
 .RData
 .Ruserdata
+
+# Quarto outputs (regenerate with qmd)
+*.html
+*_files/
+*_cache/
+.quarto/
+
+# OS files
+.DS_Store
+Thumbs.db

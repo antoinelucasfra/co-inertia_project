@@ -1,0 +1,394 @@
+---
+title: "La co-inertie"
+subtitle: "Analyse multivariée en écologie"
+author: "Antoine Lucas, Julien Petot, Chloé Tellier"
+institute: "Agrocampus Ouest"
+date: today
+format:
+  revealjs:
+    theme: default
+    slide-number: true
+    embed-resources: true
+    code-fold: false
+    code-overflow: wrap
+    highlight-style: github
+    fig-align: center
+    fig-width: 8
+    fig-height: 5
+execute:
+  echo: true
+  warning: false
+  message: false
+---
+
+```{r}
+#| label: setup
+#| include: false
+
+library(ade4)
+library(adegraphics)
+
+# CTMI function for fish abundance based on temperature
+CTMI <- function(temp, param) {
+
+  Tmin <- param[1]
+  Topt <- param[2]
+  Tmax <- param[3]
+  Muopt <- param[4]
+  if (temp <= Tmin || temp >= Tmax) {
+    return(0)
+  } else {
+    Num <- (temp - Tmax) * (temp - Tmin)^2
+    Den <- (Topt - Tmin) * ((Topt - Tmin) * (temp - Topt) - (Topt - Tmax) * (Topt + Tmin - 2 * temp))
+    return(Muopt * Num / Den)
+  }
+}
+
+# 16 stations with their average temperatures
+Tstations <- seq(from = 5, to = 80, by = 5)
+
+# Species parameters
+nsp <- 10
+topt <- seq(from = 5, to = 100, length = nsp)
+tmin <- 0.953 * topt - 28.913
+tmax <- 1.101 * topt + 3.203
+
+# Build abundance data
+data <- data.frame(matrix(nrow = nsp, ncol = length(Tstations)))
+colnames(data) <- paste0("st", seq_along(Tstations))
+rownames(data) <- paste0("sp", round(topt, 0))
+
+for (i in 1:nsp) {
+  for (j in seq_along(Tstations)) {
+    data[i, j] <- round(CTMI(temp = Tstations[j], param = c(tmin[i], topt[i], tmax[i], 1000)), 0)
+  }
+}
+
+# Shuffle data
+set.seed(42)
+data.vv <- data[sample(nrow(data)), sample(ncol(data))]
+
+# AFC to reorder
+afc_init <- dudi.coa(data.vv, scannf = FALSE)
+data.vv.ord <- data.vv[order(afc_init$li[, 1]), order(afc_init$co[, 1])]
+
+# Temperature measurements
+set.seed(1)
+mesureT <- sapply(Tstations, function(x) {
+  10 * sin(seq(0, pi, length = 24)) + x + rnorm(n = 24, sd = 5)
+})
+colnames(mesureT) <- paste0("st", 1:16)
+rownames(mesureT) <- paste0("h", 1:24)
+```
+
+# Plan de la présentation
+
+1. La co-inertie : présentation
+2. Application à des données d'écologie
+
+---
+
+## Cadre général
+
+::: {.incremental}
+- On a **2 tableaux** : mêmes individus et différentes variables
+- On regarde les **structures communes** entre les 2 tableaux
+:::
+
+. . .
+
+**Cadre typique :**
+
+- Premier tableau → variables réponses
+- Deuxième tableau → variables explicatives
+
+. . .
+
+**Exemple :**
+
+- Tableau 1 : abondance d'espèces de poissons par station
+- Tableau 2 : variables environnementales par station
+
+*Objectif* : identifier les relations entre abondances et environnement
+
+---
+
+## La démarche : analyses factorielles
+
+On réalise une analyse factorielle sur chacun des deux tableaux.
+
+```{r}
+#| label: schema1
+#| echo: false
+#| fig-height: 4
+
+par(mar = c(1, 1, 2, 1))
+plot(0, 0, type = "n", xlim = c(0, 10), ylim = c(0, 6),
+     axes = FALSE, xlab = "", ylab = "", main = "Schéma de la démarche")
+rect(0.5, 3.5, 2.5, 5.5, col = "lightblue", border = "black")
+text(1.5, 4.5, "Tableau 1\n(Y)", cex = 0.9)
+rect(0.5, 0.5, 2.5, 2.5, col = "lightgreen", border = "black")
+text(1.5, 1.5, "Tableau 2\n(X)", cex = 0.9)
+arrows(2.7, 4.5, 4.3, 4.5, length = 0.1, lwd = 2)
+arrows(2.7, 1.5, 4.3, 1.5, length = 0.1, lwd = 2)
+text(3.5, 4.8, "AFC/ACP", cex = 0.8)
+text(3.5, 1.8, "ACP", cex = 0.8)
+set.seed(1)
+points(5 + rnorm(15, 0, 0.3), 4.5 + rnorm(15, 0, 0.3), pch = 19, col = "blue", cex = 0.6)
+points(5 + rnorm(15, 0, 0.3), 1.5 + rnorm(15, 0, 0.3), pch = 19, col = "darkgreen", cex = 0.6)
+text(5, 5.5, "Nuage 1", cex = 0.8)
+text(5, 2.5, "Nuage 2", cex = 0.8)
+```
+
+---
+
+## La démarche : co-inertie
+
+On couple les 2 nuages de points par **maximisation de la covariance** :
+
+$$\operatorname{cov}^{2}(XQu_{1}, YRv_{1}) = \operatorname{cor}^{2}(XQu_{1}, YRv_{1}) \cdot \operatorname{var}(XQu_{1}) \cdot \operatorname{var}(YRv_{1})$$
+
+. . .
+
+→ On obtient un **sous-espace commun** maximisant les relations entre les projections des 2 tableaux.
+
+---
+
+## Contraintes
+
+::: {.callout-important}
+## Conditions nécessaires
+
+1. Les individus doivent être **identiques** et dans le **même ordre**
+2. Les individus doivent avoir la **même pondération** dans les deux analyses factorielles
+:::
+
+---
+
+## Test de co-structure
+
+Les relations sont mesurées par le **coefficient RV** ∈ [0, 1]
+
+- RV ≈ 1 → forte corrélation
+- RV ≈ 0 → faible corrélation
+
+. . .
+
+**Test de significativité (Monte-Carlo) :**
+
+1. Calculer le coefficient RV observé
+2. Permuter les lignes d'un tableau
+3. Recalculer RV
+4. Répéter *n* fois
+
+---
+
+## Test de co-structure : illustration
+
+```{r}
+#| label: test-illustration
+#| echo: false
+#| fig-height: 4
+
+set.seed(123)
+rv_perm <- rbeta(999, 2, 10)
+rv_obs <- 0.85
+
+hist(rv_perm, breaks = 30, col = "lightgray", border = "white",
+     main = "Distribution du RV sous H0", xlab = "Coefficient RV",
+     xlim = c(0, 1), probability = TRUE)
+abline(v = rv_obs, col = "red", lwd = 3, lty = 2)
+text(rv_obs + 0.08, 3, "RV observé", col = "red", cex = 0.9)
+```
+
+::: {.callout-warning}
+Ne pas permuter le tableau qui a fourni les pondérations !
+:::
+
+---
+
+# Application à des données d'écologie {.section}
+
+---
+
+## Tableau 1 : données d'abondances
+
+Simulation : **16 stations** × **10 espèces** de poissons
+
+```{r}
+#| label: table1-viz
+#| echo: false
+#| fig-height: 5
+
+table.value(data.vv.ord, main = "Données d'abondance (stations × espèces)")
+```
+
+Les stations sont réparties selon un **gradient** conditionnant la présence des espèces.
+
+---
+
+## Tableau 2 : données environnementales
+
+Température pour 16 stations × 24 heures
+
+```{r}
+#| label: table2-viz
+#| echo: false
+#| fig-height: 4.5
+
+plot(0, type = "n", xlim = c(1, 24), ylim = range(mesureT),
+     xlab = "Heures", ylab = "Température",
+     las = 1, main = "Température des stations au cours de la journée")
+cols <- colorRampPalette(c("blue", "red"))(16)
+for (i in 1:16) {
+  lines(1:24, mesureT[, i], col = cols[i], lwd = 1.5)
+}
+legend("topright", legend = c("Stations froides", "Stations chaudes"),
+       col = c("blue", "red"), lwd = 2, cex = 0.8, bty = "n")
+```
+
+---
+
+## AFC du tableau d'abondances
+
+```{r}
+#| label: afc
+#| fig-height: 5
+
+afc <- dudi.coa(data.vv, scannf = FALSE)
+scatter(afc, main = "AFC - Données d'abondance")
+```
+
+→ **Effet Guttman** visible (forme de parabole)
+
+---
+
+## ACP du tableau de températures
+
+```{r}
+#| label: acp
+#| fig-height: 5
+
+acp <- dudi.pca(t(mesureT), scannf = FALSE)
+scatter(acp, main = "ACP - Données de température")
+```
+
+→ Le premier axe explique **>99% de la variabilité** (gradient thermique)
+
+---
+
+## Vérifications pour la co-inertie
+
+:::: {.columns}
+::: {.column width="50%"}
+**1) Dimensions :**
+```{r}
+tab1 <- as.data.frame(t(data))
+tab2 <- as.data.frame(t(mesureT))
+dim(tab1)
+dim(tab2)
+```
+:::
+
+::: {.column width="50%"}
+**2) Même ordre :**
+```{r}
+all.equal(rownames(tab1), rownames(tab2))
+```
+
+**3) Même pondération :**
+```{r}
+coa <- dudi.coa(tab1, scannf = FALSE, nf = 2)
+pca <- dudi.pca(tab2, row.w = coa$lw, scannf = FALSE, nf = 2)
+all.equal(pca$lw, coa$lw)
+```
+:::
+::::
+
+---
+
+## Réalisation de la co-inertie
+
+```{r}
+#| label: coinertia
+
+cia <- coinertia(dudiX = pca, dudiY = coa, scannf = FALSE, nf = 2)
+```
+
+**Variance expliquée :**
+
+```{r}
+round(c(F1 = cia$eig[1] / sum(cia$eig),
+        F2 = cia$eig[2] / sum(cia$eig)), 3)
+```
+
+→ Le premier facteur extrait **99.3%** de la variabilité
+
+---
+
+## Coefficient RV et test
+
+```{r}
+cia$RV
+```
+
+. . .
+
+```{r}
+#| label: rv-test
+#| fig-height: 4
+
+ciatest <- randtest(cia, nrepet = 999, fixed = 2)
+plot(ciatest, main = "Test de Monte-Carlo sur le coefficient RV")
+```
+
+---
+
+## Conclusion
+
+::: {.incremental}
+- Les deux tableaux ont des structures **très similaires**
+- Les stations sont disposées selon un **gradient de température**
+- La présence de chaque espèce dépend de sa **température optimale**
+- **Forte corrélation** entre abondances et environnement
+- Prochaine étape : analyser le plan de co-inertie
+:::
+
+---
+
+## Pour résumer
+
+**Packages :** `{ade4}` et `{adegraphics}`
+
+**Démarche :**
+
+| Étape | Action | Fonction |
+|-------|--------|----------|
+| 1 | Analyses factorielles | `dudi.pca()`, `dudi.coa()`, `dudi.acm()` |
+| 2 | Vérifications | individus, ordre, pondérations |
+| 3 | Co-inertie | `coinertia()` |
+| 4 | Test de significativité | `randtest()` |
+| 5 | Interprétation | valeurs propres, graphiques |
+
+. . .
+
+Pour aller plus loin : co-inertie à **K tableaux** !
+
+---
+
+## Bibliographie
+
+- Chessel D. & Hanafi M. (1996). *Analyses de la co-inertie de K nuages de points*
+- Lobry J.R. (2017). *Analyse de co-inertie sur données simulées et protéomiques*
+- de Magny C. et al. (2006). *De la statistique élémentaire à l'analyse de co-inertie*
+- Pannard A. *Multivariate analysis in Ecology* - Rennes 2
+
+---
+
+## {.center}
+
+### Merci pour votre attention !
+
+<br>
+
+Code source disponible sur [GitHub](https://github.com/antoinelucasfra/co-inertia_project)
